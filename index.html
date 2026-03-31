@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Taikondo 2D </title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', 'Press Start 2P', monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            cursor: none;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            text-align: center;
+            font-family: monospace;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+        }
+
+        #controls span {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 4px 8px;
+            background: #333;
+            border-radius: 4px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pulse {
+            animation: pulse 0.5s ease-in-out;
+        }
+
+        @media (max-width: 768px) {
+            #controls {
+                font-size: 8px;
+                bottom: 10px;
+            }
+            #controls span {
+                margin: 0 5px;
+                padding: 2px 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="1024" height="768"></canvas>
+    </div>
+    <div id="controls">
+        🎮 CONTROLES: 
+        <span>← →</span> Movimento 
+        <span>A / J</span> Soco 
+        <span>S / K</span> Chute 
+        <span>D / L</span> Defesa 
+        <span>X / U</span> Especial 
+        <span>ENTER</span> Selecionar
+        <span>ESC</span> Sair
+    </div>
+
+    <script>
+        // Configuração do canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Dimensões
+        const WIDTH = 1024;
+        const HEIGHT = 768;
+
+        // Estados do jogo
+        const GAME_STATE = {
+            MENU: 'menu',
+            CHARACTER_SELECT: 'character_select',
+            STORY: 'story',
+            FIGHT: 'fight',
+            RANKING: 'ranking',
+            GAME_OVER: 'game_over',
+            EXIT: 'exit'
+        };
+
+        // Cores
+        const COLORS = {
+            BLACK: '#000000',
+            WHITE: '#FFFFFF',
+            RED: '#FF0000',
+            GREEN: '#00FF00',
+            BLUE: '#3366FF',
+            YELLOW: '#FFD700',
+            ORANGE: '#FF6600',
+            PURPLE: '#AA66FF',
+            GRAY: '#666666',
+            DARK_GRAY: '#333333',
+            SKIN: '#FFCC99',
+            BROWN: '#8B4513'
+        };
+
+        // Lista de personagens
+        const CHARACTERS = [
+            { name: 'Tiozão', health: 110, speed: 4, damage: 12, color: '#FF6B6B', special: 'Cacetada', icon: '👴' },
+            { name: 'Savero', health: 100, speed: 6, damage: 10, color: '#4ECDC4', special: 'Golpe Sombrio', icon: '🥷' },
+            { name: 'PagoBoss', health: 120, speed: 3, damage: 14, color: '#FFE66D', special: 'Maldição Financeira', icon: '💰' },
+            { name: 'NeyDripXD', health: 95, speed: 8, damage: 9, color: '#FF6B9D', special: 'Drible Fatal', icon: '⚽' },
+            { name: 'Ninja Shadow', health: 90, speed: 9, damage: 8, color: '#4A4A4A', special: 'Ataque das Sombras', icon: '🗡️' },
+            { name: 'Crazy', health: 105, speed: 7, damage: 11, color: '#FF8C42', special: 'Loucura Total', icon: '🤪' },
+            { name: 'Rei dos Ovos', health: 115, speed: 4, damage: 13, color: '#F4D03F', special: 'Ovo Explosivo', icon: '🥚' },
+            { name: 'Rainha dos Ovos', health: 100, speed: 5, damage: 10, color: '#E8A87C', special: 'Chuva de Ovos', icon: '👑' },
+            { name: 'BamBamBam', health: 125, speed: 2, damage: 15, color: '#C38D9E', special: 'Tremor', icon: '🔨' },
+            { name: 'Arqueiro', health: 95, speed: 7, damage: 11, color: '#6A9C89', special: 'Flecha Precisa', icon: '🏹' },
+            { name: 'Everaldo', health: 100, speed: 6, damage: 10, color: '#D4A5A5', special: 'Golpe Final', icon: '👊' }
+        ];
+
+        // Ranking
+        let ranking = [];
+        
+        // Carregar ranking do localStorage
+        function loadRanking() {
+            const saved = localStorage.getItem('streetFightRanking');
+            if (saved) {
+                ranking = JSON.parse(saved);
+            } else {
+                ranking = [
+                    { name: 'CAMPEÃO', score: 1000, date: '01/01/2024', character: 'Tiozão' },
+                    { name: 'DESAFIANTE', score: 850, date: '01/01/2024', character: 'Everaldo' },
+                    { name: 'GUERREIRO', score: 700, date: '01/01/2024', character: 'Ninja Shadow' }
+                ];
+            }
+            ranking.sort((a, b) => b.score - a.score);
+        }
+
+        // Salvar ranking
+        function saveRanking() {
+            localStorage.setItem('streetFightRanking', JSON.stringify(ranking.slice(0, 10)));
+        }
+
+        // Adicionar pontuação
+        function addScore(name, score, character) {
+            ranking.push({
+                name: name.toUpperCase(),
+                score: score,
+                date: new Date().toLocaleDateString('pt-BR'),
+                character: character
+            });
+            ranking.sort((a, b) => b.score - a.score);
+            saveRanking();
+        }
+
+        // Classe do Lutador
+        class Fighter {
+            constructor(x, y, character, isPlayer = true) {
+                this.x = x;
+                this.y = y;
+                this.width = 80;
+                this.height = 120;
+                this.character = character;
+                this.health = character.health;
+                this.maxHealth = character.health;
+                this.speed = character.speed;
+                this.damage = character.damage;
+                this.name = character.name;
+                this.isPlayer = isPlayer;
+                this.attackCooldown = 0;
+                this.specialCooldown = 0;
+                this.isBlocking = false;
+                this.hitTimer = 0;
+                this.combo = 0;
+                this.wins = 0;
+                this.animationFrame = 0;
+                this.animationTimer = 0;
+            }
+
+            move(direction) {
+                if (this.attackCooldown > 0 && this.attackCooldown > 15) return;
+                
+                if (direction === 'left') {
+                    this.x -= this.speed;
+                    if (this.x < 50) this.x = 50;
+                } else if (direction === 'right') {
+                    this.x += this.speed;
+                    if (this.x > WIDTH - this.width - 50) this.x = WIDTH - this.width - 50;
+                }
+            }
+
+            attack() {
+                if (this.attackCooldown <= 0) {
+                    this.attackCooldown = 20;
+                    this.combo++;
+                    return this.damage + (this.combo * 2);
+                }
+                return 0;
+            }
+
+            specialAttack() {
+                if (this.specialCooldown <= 0) {
+                    this.specialCooldown = 60;
+                    return this.damage * 2;
+                }
+                return 0;
+            }
+
+            block() {
+                this.isBlocking = true;
+            }
+
+            stopBlock() {
+                this.isBlocking = false;
+            }
+
+            takeDamage(damage) {
+                if (this.isBlocking) {
+                    damage = Math.floor(damage / 2);
+                }
+                this.health -= damage;
+                this.hitTimer = 10;
+                this.combo = 0;
+                
+                if (this.health < 0) this.health = 0;
+                return this.health <= 0;
+            }
+
+            update() {
+                if (this.attackCooldown > 0) this.attackCooldown--;
+                if (this.specialCooldown > 0) this.specialCooldown--;
+                if (this.hitTimer > 0) this.hitTimer--;
+                if (this.combo > 0 && this.attackCooldown <= 0) this.combo = 0;
+                
+                // Animação simples
+                this.animationTimer++;
+                if (this.animationTimer > 10) {
+                    this.animationTimer = 0;
+                    this.animationFrame = (this.animationFrame + 1) % 4;
+                }
+            }
+
+            draw(ctx) {
+                const x = this.x;
+                const y = this.y;
+                
+                // Efeito de dano
+                if (this.hitTimer > 0) {
+                    ctx.fillStyle = '#FF0000';
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillRect(x, y, this.width, this.height);
+                    ctx.globalAlpha = 1;
+                }
+                
+                // Corpo do lutador
+                ctx.fillStyle = this.character.color;
+                ctx.fillRect(x + 10, y + 20, 60, 90);
+                
+                // Cabeça
+                ctx.fillStyle = COLORS.SKIN;
+                ctx.fillRect(x + 25, y + 5, 30, 30);
+                
+                // Rosto
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.fillRect(x + 35, y + 15, 5, 5);
+                ctx.fillRect(x + 45, y + 15, 5, 5);
+                
+                // Ícone do personagem
+                ctx.font = '30px Arial';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText(this.character.icon, x + 25, y + 45);
+                
+                // Equipamento (varia por personagem)
+                if (this.isBlocking) {
+                    ctx.fillStyle = COLORS.BLUE;
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillRect(x - 20, y + 30, 20, 50);
+                    ctx.globalAlpha = 1;
+                }
+                
+                // Barra de vida
+                const barWidth = 200;
+                const barHeight = 15;
+                const healthPercent = this.health / this.maxHealth;
+                
+                ctx.fillStyle = COLORS.RED;
+                ctx.fillRect(x - 60, y - 25, barWidth, barHeight);
+                ctx.fillStyle = COLORS.GREEN;
+                ctx.fillRect(x - 60, y - 25, barWidth * healthPercent, barHeight);
+                
+                // Nome
+                ctx.font = 'bold 16px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.shadowColor = COLORS.BLACK;
+                ctx.shadowBlur = 2;
+                ctx.fillText(this.name, x - 40, y - 35);
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // Classe principal do jogo
+        class StreetFightGame {
+            constructor() {
+                this.state = GAME_STATE.MENU;
+                this.selectedCharacter = 0;
+                this.playerName = 'LUTADOR';
+                this.player1 = null;
+                this.player2 = null;
+                this.currentRound = 1;
+                this.roundTime = 99;
+                this.roundStartTime = 0;
+                this.matchOver = false;
+                this.winner = null;
+                this.storyIndex = 0;
+                this.keys = {};
+                this.controllerConnected = false;
+                
+                // Cenários
+                this.backgrounds = this.createBackgrounds();
+                this.currentBackground = 0;
+                
+                // Storytelling
+                this.storyText = [
+                    "Em uma arena lendária, dois guerreiros se preparam...",
+                    "Tiozão, o veterano das ruas, nunca perdeu uma luta!",
+                    "Everaldo, o desafiante misterioso, veio para provar seu valor!",
+                    "O torneio STREET FIGHT decidirá o verdadeiro campeão!",
+                    "Escolha seu lutador e mostre seu poder no ringue!",
+                    "Pressione ENTER para continuar..."
+                ];
+                
+                this.setupControls();
+                loadRanking();
+                this.animate();
+            }
+            
+            createBackgrounds() {
+                // Criar dois cenários diferentes
+                const bg1 = document.createElement('canvas');
+                bg1.width = WIDTH;
+                bg1.height = HEIGHT;
+                const ctx1 = bg1.getContext('2d');
+                
+                // Cenário 1 - Arena urbana
+                ctx1.fillStyle = '#2C3E50';
+                ctx1.fillRect(0, 0, WIDTH, HEIGHT);
+                ctx1.fillStyle = '#34495E';
+                for(let i = 0; i < 20; i++) {
+                    ctx1.fillRect(i * 80, HEIGHT - 150, 40, 150);
+                }
+                ctx1.fillStyle = '#E67E22';
+                ctx1.fillRect(0, HEIGHT - 100, WIDTH, 100);
+                
+                // Cenário 2 - Arena de torneio
+                const bg2 = document.createElement('canvas');
+                bg2.width = WIDTH;
+                bg2.height = HEIGHT;
+                const ctx2 = bg2.getContext('2d');
+                
+                ctx2.fillStyle = '#1A1A2E';
+                ctx2.fillRect(0, 0, WIDTH, HEIGHT);
+                ctx2.fillStyle = '#16213E';
+                for(let i = 0; i < 5; i++) {
+                    ctx2.beginPath();
+                    ctx2.arc(WIDTH/2, HEIGHT - 100 + i * 30, 150 - i * 30, 0, Math.PI * 2);
+                    ctx2.fill();
+                }
+                ctx2.fillStyle = '#E94560';
+                ctx2.fillRect(0, HEIGHT - 80, WIDTH, 80);
+                
+                return [bg1, bg2];
+            }
+            
+            setupControls() {
+                // Teclado
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.key] = true;
+                    this.handleInput(e.key, 'down');
+                });
+                
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.key] = false;
+                    this.handleInput(e.key, 'up');
+                });
+                
+                // Controle USB (Gamepad API)
+                window.addEventListener('gamepadconnected', (e) => {
+                    this.controllerConnected = true;
+                    console.log('Controle conectado:', e.gamepad.id);
+                });
+                
+                window.addEventListener('gamepaddisconnected', () => {
+                    this.controllerConnected = false;
+                });
+                
+                // Atualizar controle periodicamente
+                setInterval(() => this.updateGamepad(), 16);
+            }
+            
+            updateGamepad() {
+                if (!this.controllerConnected) return;
+                
+                const gamepads = navigator.getGamepads();
+                const gp = gamepads[0];
+                if (!gp) return;
+                
+                // Mapeamento para controle Super Nintendo
+                const buttons = gp.buttons;
+                
+                // START (botão 9 geralmente)
+                if (buttons[9] && buttons[9].pressed) {
+                    this.handleGamepadAction('start');
+                }
+                // SELECT (botão 8)
+                if (buttons[8] && buttons[8].pressed) {
+                    this.handleGamepadAction('select');
+                }
+                // A (botão 0)
+                if (buttons[0] && buttons[0].pressed) {
+                    this.handleGamepadAction('a');
+                }
+                // B (botão 1)
+                if (buttons[1] && buttons[1].pressed) {
+                    this.handleGamepadAction('b');
+                }
+                // X (botão 2)
+                if (buttons[2] && buttons[2].pressed) {
+                    this.handleGamepadAction('x');
+                }
+                // Y (botão 3)
+                if (buttons[3] && buttons[3].pressed) {
+                    this.handleGamepadAction('y');
+                }
+                
+                // D-pad (eixos)
+                const axisX = gp.axes[0];
+                if (axisX < -0.5 && this.state === GAME_STATE.FIGHT && this.player1) {
+                    this.player1.move('left');
+                } else if (axisX > 0.5 && this.state === GAME_STATE.FIGHT && this.player1) {
+                    this.player1.move('right');
+                }
+            }
+            
+            handleGamepadAction(action) {
+                if (this.state === GAME_STATE.MENU) {
+                    if (action === 'start') this.state = GAME_STATE.CHARACTER_SELECT;
+                    else if (action === 'select') this.state = GAME_STATE.EXIT;
+                    else if (action === 'a') this.state = GAME_STATE.STORY;
+                    else if (action === 'b') this.state = GAME_STATE.RANKING;
+                }
+                else if (this.state === GAME_STATE.CHARACTER_SELECT) {
+                    if (action === 'start') this.startFight();
+                }
+                else if (this.state === GAME_STATE.FIGHT && !this.matchOver && this.player1) {
+                    if (action === 'a' || action === 'b') {
+                        const damage = this.player1.attack();
+                        if (damage > 0 && this.player2.takeDamage(damage)) {
+                            this.endMatch('player1');
+                        }
+                    }
+                    else if (action === 'x') {
+                        const damage = this.player1.specialAttack();
+                        if (damage > 0 && this.player2.takeDamage(damage)) {
+                            this.endMatch('player1');
+                        }
+                    }
+                    else if (action === 'y') {
+                        this.player1.block();
+                        setTimeout(() => this.player1.stopBlock(), 500);
+                    }
+                }
+            }
+            
+            handleInput(key, type) {
+                // Menu
+                if (this.state === GAME_STATE.MENU) {
+                    if (key === 'Enter' && type === 'down') {
+                        this.state = GAME_STATE.CHARACTER_SELECT;
+                    } else if (key === 'Escape' && type === 'down') {
+                        this.state = GAME_STATE.EXIT;
+                    } else if (key === 's' && type === 'down') {
+                        this.state = GAME_STATE.STORY;
+                    } else if (key === 'r' && type === 'down') {
+                        this.state = GAME_STATE.RANKING;
+                    }
+                }
+                // Seleção de personagem
+                else if (this.state === GAME_STATE.CHARACTER_SELECT) {
+                    if (key === 'ArrowLeft' && type === 'down') {
+                        this.selectedCharacter = (this.selectedCharacter - 1 + CHARACTERS.length) % CHARACTERS.length;
+                    } else if (key === 'ArrowRight' && type === 'down') {
+                        this.selectedCharacter = (this.selectedCharacter + 1) % CHARACTERS.length;
+                    } else if (key === 'Enter' && type === 'down') {
+                        this.startFight();
+                    }
+                }
+                // Luta
+                else if (this.state === GAME_STATE.FIGHT && !this.matchOver && this.player1) {
+                    if (type === 'down') {
+                        if (key === 'ArrowLeft') {
+                            this.player1.move('left');
+                        } else if (key === 'ArrowRight') {
+                            this.player1.move('right');
+                        } else if (key === 'a' || key === 'A' || key === 'j' || key === 'J') {
+                            const damage = this.player1.attack();
+                            if (damage > 0 && this.player2.takeDamage(damage)) {
+                                this.endMatch('player1');
+                            }
+                        } else if (key === 's' || key === 'S' || key === 'k' || key === 'K') {
+                            const damage = this.player1.attack();
+                            if (damage > 0 && this.player2.takeDamage(damage)) {
+                                this.endMatch('player1');
+                            }
+                        } else if (key === 'x' || key === 'X' || key === 'u' || key === 'U') {
+                            const damage = this.player1.specialAttack();
+                            if (damage > 0 && this.player2.takeDamage(damage)) {
+                                this.endMatch('player1');
+                            }
+                        } else if (key === 'd' || key === 'D' || key === 'l' || key === 'L') {
+                            this.player1.block();
+                            setTimeout(() => this.player1.stopBlock(), 500);
+                        }
+                    }
+                }
+                // Telas finais
+                else if (this.state === GAME_STATE.STORY || this.state === GAME_STATE.RANKING || this.state === GAME_STATE.GAME_OVER) {
+                    if ((key === 'Enter' || key === ' ') && type === 'down') {
+                        this.state = GAME_STATE.MENU;
+                    }
+                }
+                else if (this.state === GAME_STATE.EXIT) {
+                    if ((key === 'Enter' || key === ' ') && type === 'down') {
+                        this.showExitScreen();
+                    }
+                }
+            }
+            
+            startFight() {
+                const playerChar = { ...CHARACTERS[this.selectedCharacter] };
+                const enemyChar = { ...CHARACTERS[CHARACTERS.length - 1] }; // Everaldo
+                
+                this.player1 = new Fighter(150, HEIGHT - 180, playerChar, true);
+                this.player2 = new Fighter(WIDTH - 230, HEIGHT - 180, enemyChar, false);
+                this.state = GAME_STATE.FIGHT;
+                this.matchOver = false;
+                this.roundStartTime = Date.now();
+                this.roundTime = 99;
+                this.currentBackground = Math.floor(Math.random() * 2);
+            }
+            
+            endMatch(winner) {
+                this.matchOver = true;
+                this.winner = winner;
+                
+                if (winner === 'player1') {
+                    const score = Math.floor(this.player1.health * 10 + (this.roundTime * 5));
+                    addScore(this.playerName, score, this.player1.name);
+                }
+                
+                this.state = GAME_STATE.GAME_OVER;
+            }
+            
+            updateFight() {
+                if (!this.player1 || !this.player2) return;
+                
+                // Atualizar tempo
+                const elapsed = Math.floor((Date.now() - this.roundStartTime) / 1000);
+                this.roundTime = Math.max(0, 99 - elapsed);
+                
+                if (this.roundTime <= 0 && !this.matchOver) {
+                    if (this.player1.health > this.player2.health) {
+                        this.endMatch('player1');
+                    } else {
+                        this.endMatch('player2');
+                    }
+                }
+                
+                // IA do oponente
+                if (!this.matchOver) {
+                    this.player2.update();
+                    
+                    const moveChance = Math.random();
+                    if (moveChance < 0.02) {
+                        if (this.player2.x < this.player1.x - 30) {
+                            this.player2.move('right');
+                        } else if (this.player2.x > this.player1.x + 30) {
+                            this.player2.move('left');
+                        }
+                    }
+                    
+                    if (moveChance < 0.01 && this.player2.attackCooldown <= 0) {
+                        const damage = this.player2.attack();
+                        if (damage > 0 && this.player1.takeDamage(damage)) {
+                            this.endMatch('player2');
+                        }
+                    }
+                }
+                
+                this.player1.update();
+            }
+            
+            drawMenu() {
+                // Gradiente de fundo
+                const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+                grad.addColorStop(0, '#1a1a2e');
+                grad.addColorStop(1, '#16213e');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                // Título
+                ctx.font = 'bold 48px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = COLORS.ORANGE;
+                ctx.fillText('Taikondo 2D', WIDTH/2 - 220, 120);
+                
+                ctx.font = '24px "Courier New"';
+                ctx.fillStyle = COLORS.ORANGE;
+                ctx.fillText('', WIDTH/2 - 120, 180);
+                
+                // Menu
+                const menuItems = [
+                    { text: 'INICIAR BATALHA', action: 'START' },
+                    { text: 'HISTÓRIA', action: 'STORY' },
+                    { text: 'RANKING', action: 'RANKING' },
+                    { text: 'SAIR', action: 'EXIT' }
+                ];
+                
+                ctx.font = '28px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.shadowBlur = 0;
+                
+                let y = 300;
+                for (let item of menuItems) {
+                    ctx.fillText(item.text, WIDTH/2 - 120, y);
+                    y += 70;
+                }
+                
+                // Instruções
+                ctx.font = '12px monospace';
+                ctx.fillStyle = COLORS.GRAY;
+                ctx.fillText('START: Jogar | SELECT: Sair | A: História | B: Ranking', WIDTH/2 - 250, HEIGHT - 50);
+            }
+            
+            drawCharacterSelect() {
+                // Fundo
+                ctx.drawImage(this.backgrounds[0], 0, 0);
+                
+                ctx.font = 'bold 32px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillText('ESCOLHA SEU LUTADOR', WIDTH/2 - 200, 60);
+                
+                // Grid de personagens
+                const cols = 4;
+                const startX = 80;
+                const startY = 140;
+                const spacingX = 220;
+                const spacingY = 160;
+                
+                for (let i = 0; i < CHARACTERS.length; i++) {
+                    const char = CHARACTERS[i];
+                    const row = Math.floor(i / cols);
+                    const col = i % cols;
+                    const x = startX + col * spacingX;
+                    const y = startY + row * spacingY;
+                    
+                    // Fundo do card
+                    ctx.fillStyle = i === this.selectedCharacter ? COLORS.YELLOW : COLORS.DARK_GRAY;
+                    ctx.fillRect(x, y, 180, 130);
+                    ctx.fillStyle = COLORS.BLACK;
+                    ctx.fillRect(x + 3, y + 3, 174, 124);
+                    
+                    // Ícone e nome
+                    ctx.font = '48px Arial';
+                    ctx.fillStyle = COLORS.WHITE;
+                    ctx.fillText(char.icon, x + 70, y + 50);
+                    
+                    ctx.font = '12px "Courier New"';
+                    ctx.fillStyle = COLORS.WHITE;
+                    ctx.fillText(char.name, x + 50, y + 100);
+                    
+                    // Selecionado
+                    if (i === this.selectedCharacter) {
+                        ctx.strokeStyle = COLORS.YELLOW;
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x, y, 180, 130);
+                    }
+                }
+                
+                ctx.font = '14px monospace';
+                ctx.fillStyle = COLORS.GRAY;
+                ctx.fillText('← → para selecionar | ENTER para confirmar', WIDTH/2 - 250, HEIGHT - 40);
+            }
+            
+            drawFight() {
+                // Fundo
+                ctx.drawImage(this.backgrounds[this.currentBackground], 0, 0);
+                
+                // Desenhar lutadores
+                this.player1.draw(ctx);
+                this.player2.draw(ctx);
+                
+                // HUD
+                ctx.font = 'bold 24px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillText(`ROUND ${this.currentRound}`, WIDTH/2 - 50, 40);
+                
+                ctx.font = '20px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText(`TIME: ${this.roundTime}s`, WIDTH/2 - 50, 80);
+                
+                // Barras de nome
+                ctx.font = 'bold 16px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText(this.player1.name, 40, 30);
+                ctx.fillText(this.player2.name, WIDTH - 140, 30);
+            }
+            
+            drawRanking() {
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                ctx.font = 'bold 36px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillText('RANKING DOS CAMPEÕES', WIDTH/2 - 230, 60);
+                
+                // Cabeçalho
+                ctx.font = 'bold 16px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText('POS', 80, 120);
+                ctx.fillText('NOME', 180, 120);
+                ctx.fillText('PERSONAGEM', 380, 120);
+                ctx.fillText('PONTOS', 680, 120);
+                ctx.fillText('DATA', 820, 120);
+                
+                // Rankings
+                ctx.font = '14px monospace';
+                let y = 160;
+                for (let i = 0; i < Math.min(10, ranking.length); i++) {
+                    const entry = ranking[i];
+                    const color = i === 0 ? COLORS.YELLOW : (i === 1 ? COLORS.ORANGE : (i === 2 ? COLORS.GRAY : COLORS.WHITE));
+                    ctx.fillStyle = color;
+                    ctx.fillText(`${i+1}º`, 80, y);
+                    ctx.fillText(entry.name.substring(0, 15), 180, y);
+                    ctx.fillText(entry.character.substring(0, 12), 380, y);
+                    ctx.fillText(entry.score.toString(), 680, y);
+                    ctx.fillText(entry.date, 820, y);
+                    y += 35;
+                }
+                
+                ctx.font = '12px monospace';
+                ctx.fillStyle = COLORS.GRAY;
+                ctx.fillText('Pressione ENTER para voltar', WIDTH/2 - 150, HEIGHT - 40);
+            }
+            
+            drawStory() {
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                // Efeito de fade
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                ctx.font = 'bold 32px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillText('A LENDA DO STREET FIGHT', WIDTH/2 - 200, 80);
+                
+                ctx.font = '20px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                const storyY = 200 + Math.floor(this.storyIndex % 50);
+                ctx.fillText(this.storyText[Math.floor(this.storyIndex) % this.storyText.length], 
+                            WIDTH/2 - 250, storyY);
+                
+                this.storyIndex += 0.02;
+                if (this.storyIndex >= this.storyText.length) {
+                    this.storyIndex = 0;
+                }
+                
+                ctx.font = '12px monospace';
+                ctx.fillStyle = COLORS.GRAY;
+                ctx.fillText('Pressione ENTER para continuar', WIDTH/2 - 150, HEIGHT - 40);
+            }
+            
+            drawGameOver() {
+                ctx.fillStyle = 'rgba(0,0,0,0.9)';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                if (this.winner === 'player1') {
+                    ctx.font = 'bold 48px "Courier New"';
+                    ctx.fillStyle = COLORS.YELLOW;
+                    ctx.fillText('VITÓRIA!', WIDTH/2 - 80, 200);
+                    
+                    ctx.font = '24px "Courier New"';
+                    ctx.fillStyle = COLORS.GREEN;
+                    ctx.fillText(`${this.player1.name} é o CAMPEÃO!`, WIDTH/2 - 200, 280);
+                    
+                    const score = Math.floor(this.player1.health * 10 + (this.roundTime * 5));
+                    ctx.font = '18px monospace';
+                    ctx.fillStyle = COLORS.WHITE;
+                    ctx.fillText(`Pontuação: ${score} pontos!`, WIDTH/2 - 100, 350);
+                } else {
+                    ctx.font = 'bold 48px "Courier New"';
+                    ctx.fillStyle = COLORS.RED;
+                    ctx.fillText('DERROTA!', WIDTH/2 - 80, 200);
+                    
+                    ctx.font = '24px "Courier New"';
+                    ctx.fillStyle = COLORS.ORANGE;
+                    ctx.fillText(`${this.player2.name} venceu a batalha!`, WIDTH/2 - 200, 280);
+                }
+                
+                ctx.font = '14px monospace';
+                ctx.fillStyle = COLORS.GRAY;
+                ctx.fillText('Pressione ENTER para voltar ao menu', WIDTH/2 - 200, HEIGHT - 50);
+            }
+            
+            drawExit() {
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                ctx.font = 'bold 48px "Courier New"';
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillText('ATÉ A PRÓXIMA LUTA!', WIDTH/2 - 250, HEIGHT/2 - 50);
+                
+                ctx.font = '20px "Courier New"';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText('Obrigado por jogar Street Fight 2D', WIDTH/2 - 220, HEIGHT/2 + 50);
+            }
+            
+            showExitScreen() {
+                this.state = GAME_STATE.MENU;
+            }
+            
+            draw() {
+                switch(this.state) {
+                    case GAME_STATE.MENU:
+                        this.drawMenu();
+                        break;
+                    case GAME_STATE.CHARACTER_SELECT:
+                        this.drawCharacterSelect();
+                        break;
+                    case GAME_STATE.FIGHT:
+                        this.drawFight();
+                        break;
+                    case GAME_STATE.RANKING:
+                        this.drawRanking();
+                        break;
+                    case GAME_STATE.STORY:
+                        this.drawStory();
+                        break;
+                    case GAME_STATE.GAME_OVER:
+                        this.drawGameOver();
+                        break;
+                    case GAME_STATE.EXIT:
+                        this.drawExit();
+                        break;
+                }
+            }
+            
+            animate() {
+                if (this.state === GAME_STATE.FIGHT) {
+                    this.updateFight();
+                }
+                this.draw();
+                requestAnimationFrame(() => this.animate());
+            }
+        }
+        
+        // Iniciar o jogo quando a página carregar
+        window.addEventListener('load', () => {
+            const game = new StreetFightGame();
+        });
+    </script>
+</body>
+</html>
